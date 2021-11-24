@@ -1,21 +1,22 @@
 const express = require('express');
 const app = express()
-const { MongoClient } = require('mongodb');
 const cors = require('cors');
 const admin = require("firebase-admin");
 require('dotenv').config()
 const ObjectId = require('mongodb').ObjectId
+const { MongoClient } = require('mongodb');
 
+const stripe = require('stripe')(process.env.STRIPE_SECRET)
 
 const port = process.env.PORT || 5000;
 
 // paradise-event-819fa-firebase-adminsdk.json
 
 
-const serviceAccount = require('./paradise-event-819fa-firebase-adminsdk.json');
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
+// const serviceAccount = JSON.parse('./paradise-event-819fa-firebase-adminsdk.json');
+// admin.initializeApp({
+//   credential: admin.credential.cert(serviceAccount)
+// });
 
 
 //middlewear
@@ -34,6 +35,7 @@ async function verifyToken(req, res, next) {
     if (req?.headers?.authorization?.startsWith('Bearer ')) {
         const token = req.headers.authorization.split(' ')[1];
         console.log(token);
+
         try {
             
             const decodedUser = await admin.auth().verifyIdToken(token)
@@ -182,6 +184,25 @@ async function server() {
             console.log(cursor);
             res.json(cursor)
         })
+        //payment
+        app.get('/payments/:id', async (req, res) => {
+            const id = req.params.id
+            const query = { _id: ObjectId(id) }
+            const result = await bookingCollection.findOne(query)
+            res.json(result);
+        })
+        ///////// --payment post--stripe integration with server
+        app.post('/create-payment-intent', async (req, res) => {
+            const paymentInfo = req.body;
+            const amount = paymentInfo.price * 100;
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: 'usd',
+                payment_method_types:['card']
+            })
+            res.json({clientSecret: paymentIntent.client_secret})
+        })
+        //////////////////
 
         app.post('/booking', async (req, res) => {
             const newEvents = req.body;
@@ -189,6 +210,20 @@ async function server() {
             console.log(result);
             res.json(result)
         })
+
+        app.put('/updateStatus/:id', (req, res) => {
+            const id = req.params.id;
+            const updateStatus = req.body.status;
+            // console.log(updateStatus);
+            const filter = { _id: ObjectId(id) };
+            bookingCollection.updateOne(filter, {
+                $set: { status: updateStatus },
+            })
+                .then(result => {
+                    res.send(result)
+                });
+        })
+
         app.delete('/booking/:id', async (req, res) => {
             const id = req.params.id;
             const filter = {_id: ObjectId(id)}
